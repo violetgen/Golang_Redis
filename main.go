@@ -23,8 +23,8 @@ func main() {
 	})
 	templates = template.Must(template.ParseGlob("templates/*.html"))
 	r := mux.NewRouter()
-	r.HandleFunc("/", indexGetHandler).Methods("GET")
-	r.HandleFunc("/", indexPostHandler).Methods("POST")
+	r.HandleFunc("/", AuthRequired(indexGetHandler)).Methods("GET")
+	r.HandleFunc("/", AuthRequired(indexPostHandler)).Methods("POST")
 	r.HandleFunc("/login", loginGetHandler).Methods("GET")
 	r.HandleFunc("/login", loginPostHandler).Methods("POST")
 	r.HandleFunc("/register", registerGetHandler).Methods("GET")
@@ -44,14 +44,31 @@ func main() {
 	// http.ListenAndServe(":7000", nil)
 }
 
-func indexGetHandler(res http.ResponseWriter, req *http.Request) {
-	session, _ := store.Get(req, "session")
-	_, ok := session.Values["username"]
-	if !ok {
-		http.Redirect(res, req, "/login", 302)
+// Instead of checking if a user is authenticated in the "indexGetHandler" alone, let us create a middleware thart will help us handle that:
 
-		return
+//note: "AuthRequired" takes in a handler, for instance: "indexGetHandler", which calls the ServeHTTP method of the handler, if the midddleware condition is satisfied
+
+func AuthRequired(handler http.HandlerFunc) http.HandlerFunc {
+	//return a handler
+	return func(res http.ResponseWriter, req *http.Request) {
+		session, _ := store.Get(req, "session")
+		_, ok := session.Values["username"]
+		if !ok {
+			http.Redirect(res, req, "/login", 302)
+			return
+		}
+		handler.ServeHTTP(res, req)
 	}
+}
+
+func indexGetHandler(res http.ResponseWriter, req *http.Request) {
+	// session, _ := store.Get(req, "session")
+	// _, ok := session.Values["username"]
+	// if !ok {
+	// 	http.Redirect(res, req, "/login", 302)
+	// 	return
+	// }
+
 	//get the first ten strings in redis from a string called "comments":
 	comments, err := client.LRange("comments", 0, 10).Result()
 	if err != nil {
