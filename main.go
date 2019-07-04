@@ -5,10 +5,11 @@ import (
 	"log"
 	"net/http"
 
+	"golang.org/x/crypto/bcrypt"
+
 	"github.com/go-redis/redis"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/sessions"
-	// "github.com/gorilla/sessions"
 )
 
 var client *redis.Client
@@ -26,7 +27,9 @@ func main() {
 	r.HandleFunc("/", indexPostHandler).Methods("POST")
 	r.HandleFunc("/login", loginGetHandler).Methods("GET")
 	r.HandleFunc("/login", loginPostHandler).Methods("POST")
-	r.HandleFunc("/test", testGetHandler).Methods("GET")
+	r.HandleFunc("/register", registerGetHandler).Methods("GET")
+	r.HandleFunc("/register", registerPostHandler).Methods("POST")
+	// r.HandleFunc("/test", testGetHandler).Methods("GET")
 
 	fs := http.FileServer(http.Dir("./static"))
 	r.PathPrefix("/static/").Handler(http.StripPrefix("/static/", fs))
@@ -42,9 +45,18 @@ func main() {
 }
 
 func indexGetHandler(res http.ResponseWriter, req *http.Request) {
+	session, _ := store.Get(req, "session")
+	_, ok := session.Values["username"]
+	if !ok {
+		http.Redirect(res, req, "/login", 302)
+
+		return
+	}
 	//get the first ten strings in redis from a string called "comments":
 	comments, err := client.LRange("comments", 0, 10).Result()
 	if err != nil {
+		res.WriteHeader(http.StatusInternalServerError)
+		res.Write([]byte("Internal server error"))
 		return
 	}
 	// fmt.Fprint(res, "Hello World!")
@@ -59,7 +71,13 @@ func indexPostHandler(res http.ResponseWriter, req *http.Request) {
 
 	log.Println(comment)
 
-	client.LPush("comments", comment)
+	err := client.LPush("comments", comment).Err()
+	if err != nil {
+		res.WriteHeader(http.StatusInternalServerError)
+		res.Write([]byte("Internal server error"))
+		return
+	}
+	//if no errors, return to the main page
 	http.Redirect(res, req, "/", 302)
 
 	// fmt.Fprint(res, "Hello World!")
@@ -73,25 +91,71 @@ func loginGetHandler(res http.ResponseWriter, req *http.Request) {
 func loginPostHandler(res http.ResponseWriter, req *http.Request) {
 	req.ParseForm()
 	username := req.PostForm.Get("username")
+	password := req.PostForm.Get("password")
+	hash, err := client.Get("user:" + username).Bytes()
+	if err == redis.Nil {
+		templates.ExecuteTemplate(res, "login.html", "unknown user")
+		return
+	} else if err != nil {
+		res.WriteHeader(http.StatusInternalServerError)
+		res.Write([]byte("Internal server error"))
+		return
+	}
+
+	//check if the hash the user entered matched with the one stored:
+	err = bcrypt.CompareHashAndPassword(hash, []byte(password))
+	if err != nil {
+		templates.ExecuteTemplate(res, "login.html", "Invalid login details")
+		return
+	}
 	session, _ := store.Get(req, "session")
 	session.Values["username"] = username
+	session.Values["password"] = password
 	session.Save(req, res)
+	http.Redirect(res, req, "/", 302)
 }
 
-func testGetHandler(res http.ResponseWriter, req *http.Request) {
-	session, _ := store.Get(req, "session")
-	untyped, ok := session.Values["username"]
-	if !ok {
-		return
-	}
-	username, ok := untyped.(string)
-	if !ok {
-		return
-	}
-
-	//write to the byte array of the username
-	res.Write([]byte(username))
+func registerGetHandler(res http.ResponseWriter, req *http.Request) {
+	templates.ExecuteTemplate(res, "register.html", nil)
 }
+
+func registerPostHandler(res http.ResponseWriter, req *http.Request) {
+	req.ParseForm()
+	username := req.PostForm.Get("username")
+	password := req.PostForm.Get("password")
+
+	//how much strength the password have
+	cost := bcrypt.DefaultCost
+	//convert the password from string to byte
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), cost)
+	if err != nil {
+		res.WriteHeader(http.StatusInternalServerError)
+		res.Write([]byte("Internal server error"))
+		return
+	}
+	//Add the user to redis
+	//the zero tells the set method that the key should not expire
+	err = client.Set("user:"+username, hash, 0).Err()
+	if err != nil {
+		res.WriteHeader(http.StatusInternalServerError)
+		res.Write([]byte("Internal server error"))
+		return
+	}
+	http.Redirect(res, req, "/login", 302)
+}
+
+// func testGetHandler(res http.ResponseWriter, req *http.Request) {
+// 	session, _ := store.Get(req, "session")
+// 	untyped, ok := session.Values["username"]
+// 	if !ok {
+// 		return
+// 	}
+// 	username, ok := untyped.(string)
+// 	if !ok {
+// 		return
+// 	}
+// 	res.Write([]byte(username))
+// }
 
 // func goodbyeHandler(res http.ResponseWriter, req *http.Request) {
 // 	fmt.Fprint(res, "Goodbye World!")
