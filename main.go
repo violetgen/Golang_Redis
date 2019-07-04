@@ -7,9 +7,12 @@ import (
 
 	"github.com/go-redis/redis"
 	"github.com/gorilla/mux"
+	"github.com/gorilla/sessions"
+	// "github.com/gorilla/sessions"
 )
 
 var client *redis.Client
+var store = sessions.NewCookieStore([]byte("victor-steven"))
 
 var templates *template.Template
 
@@ -21,6 +24,10 @@ func main() {
 	r := mux.NewRouter()
 	r.HandleFunc("/", indexGetHandler).Methods("GET")
 	r.HandleFunc("/", indexPostHandler).Methods("POST")
+	r.HandleFunc("/login", loginGetHandler).Methods("GET")
+	r.HandleFunc("/login", loginPostHandler).Methods("POST")
+	r.HandleFunc("/test", testGetHandler).Methods("GET")
+
 	fs := http.FileServer(http.Dir("./static"))
 	r.PathPrefix("/static/").Handler(http.StripPrefix("/static/", fs))
 
@@ -57,6 +64,33 @@ func indexPostHandler(res http.ResponseWriter, req *http.Request) {
 
 	// fmt.Fprint(res, "Hello World!")
 	// templates.ExecuteTemplate(res, "index.html", comments)
+}
+
+func loginGetHandler(res http.ResponseWriter, req *http.Request) {
+	templates.ExecuteTemplate(res, "login.html", nil)
+}
+
+func loginPostHandler(res http.ResponseWriter, req *http.Request) {
+	req.ParseForm()
+	username := req.PostForm.Get("username")
+	session, _ := store.Get(req, "session")
+	session.Values["username"] = username
+	session.Save(req, res)
+}
+
+func testGetHandler(res http.ResponseWriter, req *http.Request) {
+	session, _ := store.Get(req, "session")
+	untyped, ok := session.Values["username"]
+	if !ok {
+		return
+	}
+	username, ok := untyped.(string)
+	if !ok {
+		return
+	}
+
+	//write to the byte array of the username
+	res.Write([]byte(username))
 }
 
 // func goodbyeHandler(res http.ResponseWriter, req *http.Request) {
