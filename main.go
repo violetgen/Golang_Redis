@@ -3,15 +3,27 @@ package main
 import (
 	"fmt"
 	"net/http"
+
+	"github.com/gorilla/mux"
 )
 
-func handler(res http.ResponseWriter, req *http.Request) {
-	// print "Hello WOrld" to ur response writer
+func main() {
+	r := mux.NewRouter()
+	r.HandleFunc("/hello", helloHandler).Methods("GET")
+	r.HandleFunc("/goodbye", goodbyeHandler).Methods("GET")
+
+	http.Handle("/", r)
+	http.ListenAndServe(":7000", nil)
+
+	//without mux
+	// http.HandleFunc("/", handler)
+	// http.ListenAndServe(":7000", nil)
+}
+
+func helloHandler(res http.ResponseWriter, req *http.Request) {
 	fmt.Fprint(res, "Hello World!")
 }
 
-func main() {
-	//when a request is made, we want to use our handler
-	http.HandleFunc("/", handler)
-	http.ListenAndServe(":7000", nil)
+func goodbyeHandler(res http.ResponseWriter, req *http.Request) {
+	fmt.Fprint(res, "Goodbye World!")
 }
